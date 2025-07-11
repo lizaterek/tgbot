@@ -1,5 +1,5 @@
 import logging
-import aiosqlite
+import sqlite3
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
@@ -17,7 +17,6 @@ dp = Dispatcher()
 ROWS = 3
 SEATS_PER_ROW = 8
 
-# Пример дат и сеансов
 DATES = ["12 июня", "13 июня", "14 июня"]
 SESSIONS_PER_DATE = {
     "12 июня": ["10:00", "14:00"],
@@ -25,9 +24,11 @@ SESSIONS_PER_DATE = {
     "14 июня": ["12:00", "16:00"],
 }
 
-async def init_db():
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
+# Синхронные функции работы с БД
+
+def init_db_sync():
+    with sqlite3.connect(DB_PATH) as db:
+        db.execute("""
             CREATE TABLE IF NOT EXISTS bookings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
@@ -37,32 +38,47 @@ async def init_db():
                 user_id INTEGER NOT NULL
             )
         """)
-        await db.commit()
+        db.commit()
 
-async def get_occupied_seats(date: str, session: str, row: int) -> dict[int, int]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
+def get_occupied_seats_sync(date: str, session: str, row: int):
+    with sqlite3.connect(DB_PATH) as db:
+        cursor = db.execute(
             "SELECT seat, user_id FROM bookings WHERE date = ? AND session = ? AND row = ?",
             (date, session, row)
         )
-        rows = await cursor.fetchall()
-        return {seat: user_id for seat, user_id in rows}
+        return dict(cursor.fetchall())
 
-async def book_seat(date: str, session: str, row: int, seat: int, user_id: int):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
+def book_seat_sync(date: str, session: str, row: int, seat: int, user_id: int):
+    with sqlite3.connect(DB_PATH) as db:
+        db.execute(
             "INSERT INTO bookings (date, session, row, seat, user_id) VALUES (?, ?, ?, ?, ?)",
             (date, session, row, seat, user_id)
         )
-        await db.commit()
+        db.commit()
 
-async def cancel_booking(date: str, session: str, row: int, seat: int, user_id: int):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
+def cancel_booking_sync(date: str, session: str, row: int, seat: int, user_id: int):
+    with sqlite3.connect(DB_PATH) as db:
+        db.execute(
             "DELETE FROM bookings WHERE date = ? AND session = ? AND row = ? AND seat = ? AND user_id = ?",
             (date, session, row, seat, user_id)
         )
-        await db.commit()
+        db.commit()
+
+# Асинхронные обертки через asyncio.to_thread
+
+async def init_db():
+    await asyncio.to_thread(init_db_sync)
+
+async def get_occupied_seats(date: str, session: str, row: int):
+    return await asyncio.to_thread(get_occupied_seats_sync, date, session, row)
+
+async def book_seat(date: str, session: str, row: int, seat: int, user_id: int):
+    await asyncio.to_thread(book_seat_sync, date, session, row, seat, user_id)
+
+async def cancel_booking(date: str, session: str, row: int, seat: int, user_id: int):
+    await asyncio.to_thread(cancel_booking_sync, date, session, row, seat, user_id)
+
+# Хэндлеры бота
 
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
@@ -128,6 +144,7 @@ async def select_seat(callback: CallbackQuery):
         f"Дата: {date}\nСеанс: {session}\nРяд: {row_num}\nВыберите место:",
         reply_markup=kb.as_markup()
     )
+
 @dp.callback_query(F.data.startswith("seat_"))
 async def book_seat_handler(callback: CallbackQuery):
     _, date, session, row_num, seat_num = callback.data.split("_")
@@ -143,7 +160,6 @@ async def book_seat_handler(callback: CallbackQuery):
     await book_seat(date, session, row_num, seat_num, user_id)
     await callback.answer("Место забронировано ✅", show_alert=False)
 
-    # 📩 Отправка информации о бронировании
     await bot.send_message(
         user_id,
         f"🎟 Ваша бронь:\n\n"
@@ -155,7 +171,6 @@ async def book_seat_handler(callback: CallbackQuery):
 
     await select_seat(callback)
 
-
 @dp.callback_query(F.data.startswith("cancel_"))
 async def cancel_seat(callback: CallbackQuery):
     _, date, session, row_num, seat_num = callback.data.split("_")
@@ -166,7 +181,6 @@ async def cancel_seat(callback: CallbackQuery):
     await cancel_booking(date, session, row_num, seat_num, user_id)
     await callback.answer("Бронирование отменено ✅", show_alert=False)
 
-    # 📨 Отправка подтверждения отмены
     await bot.send_message(
         user_id,
         f"❌ Ваша бронь отменена:\n\n"
