@@ -198,6 +198,12 @@ def create_app():
     setup_application(app, dp, bot=bot)
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
+
+    async def healthcheck(request):
+        return web.Response(text="✅ Бот работает")
+
+    app.router.add_get("/", healthcheck)
+
     return app
 
 if __name__ == "__main__":
