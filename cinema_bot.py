@@ -4,11 +4,10 @@ import asyncio
 import os
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message, InlineKeyboardButton  # ✅ добавлен импорт
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
-
 
 # 📌 Переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -16,13 +15,14 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "supersecret")
 BASE_WEBHOOK_URL = os.getenv("BASE_WEBHOOK_URL")  # Пример: https://your-bot.onrender.com
 WEBHOOK_PATH = "/webhook"
 DB_PATH = "bookings.db"
+PORT = int(os.environ["PORT"])  # Обязательно для Render
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# 📅 Константы
+# 🗕 Константы
 ROWS = 3
 SEATS_PER_ROW = 8
 DATES = ["12 июня", "13 июня", "14 июня"]
@@ -111,7 +111,6 @@ async def select_seat(callback: CallbackQuery):
     _, date, session, row_num = callback.data.split("_", 3)
     row_num = int(row_num)
     occupied = await get_occupied_seats(date, session, row_num)
-    
     kb = InlineKeyboardBuilder()
     row_buttons = []
 
@@ -130,10 +129,7 @@ async def select_seat(callback: CallbackQuery):
         row_buttons.append((text, cb_data))
 
     for i in range(0, len(row_buttons), 4):
-        buttons = [
-            InlineKeyboardButton(text=text, callback_data=cb_data)
-            for text, cb_data in row_buttons[i:i+4]
-        ]
+        buttons = [InlineKeyboardButton(text=text, callback_data=cb_data) for text, cb_data in row_buttons[i:i+4]]
         kb.row(*buttons)
 
     kb.row(
@@ -146,7 +142,24 @@ async def select_seat(callback: CallbackQuery):
         f"🔵 — ваше место\n❌ — занято\n\nВыберите место:",
         reply_markup=kb.as_markup()
     )
-    
+
+@dp.callback_query(F.data.startswith("seat_"))
+async def book_seat_handler(callback: CallbackQuery):
+    _, date, session, row_num, seat_num = callback.data.split("_")
+    row_num = int(row_num)
+    seat_num = int(seat_num)
+    user_id = callback.from_user.id
+
+    occupied = await get_occupied_seats(date, session, row_num)
+    if seat_num in occupied:
+        await callback.answer("Место уже занято!", show_alert=True)
+        return
+
+    await book_seat(date, session, row_num, seat_num, user_id)
+    await callback.answer("Место забронировано ✅")
+    await bot.send_message(user_id, f"🎟 Ваша бронь:\n📅 {date}\n🕒 {session}\n🎫 Ряд {row_num}, место {seat_num}")
+    await select_seat(callback)
+
 @dp.callback_query(F.data.startswith("cancel_"))
 async def cancel_seat(callback: CallbackQuery):
     _, date, session, row_num, seat_num = callback.data.split("_")
@@ -156,17 +169,14 @@ async def cancel_seat(callback: CallbackQuery):
 
     await cancel_booking(date, session, row_num, seat_num, user_id)
     await callback.answer("Бронь отменена ✅")
-    await bot.send_message(
-        user_id,
-        f"❌ Бронь отменена:\n📅 {date}\n🕒 {session}\n🎫 Ряд {row_num}, место {seat_num}"
-    )
+    await bot.send_message(user_id, f"❌ Бронь отменена:\n📅 {date}\n🕒 {session}\n🎫 Ряд {row_num}, место {seat_num}")
     await select_seat(callback)
 
 @dp.callback_query(F.data == "ignore")
 async def ignore(callback: CallbackQuery):
     await callback.answer("Место занято", show_alert=True)
 
-# 🛰 Webhook-сервер
+# 🛡 Webhook-сервер
 async def on_startup(app):
     await bot.set_webhook(f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}", secret_token=WEBHOOK_SECRET)
     await init_db()
@@ -184,4 +194,4 @@ def create_app():
     return app
 
 if __name__ == "__main__":
-    web.run_app(create_app(), host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
+    web.run_app(create_app(), host="0.0.0.0", port=PORT)
