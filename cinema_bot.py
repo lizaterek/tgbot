@@ -1,12 +1,19 @@
 import logging
 import sqlite3
+import asyncio
+import os
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-import asyncio
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 
-BOT_TOKEN = "7602655211:AAEbUa1-rPtIe-JZ02sBW9wT0PZ_WzJF2Wk"
+# 📌 Переменные окружения
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "supersecret")
+BASE_WEBHOOK_URL = os.getenv("BASE_WEBHOOK_URL")  # Пример: https://your-bot.onrender.com
+WEBHOOK_PATH = "/webhook"
 DB_PATH = "bookings.db"
 
 logging.basicConfig(level=logging.INFO)
@@ -14,9 +21,9 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# 📅 Константы
 ROWS = 3
 SEATS_PER_ROW = 8
-
 DATES = ["12 июня", "13 июня", "14 июня"]
 SESSIONS_PER_DATE = {
     "12 июня": ["10:00", "14:00"],
@@ -24,8 +31,7 @@ SESSIONS_PER_DATE = {
     "14 июня": ["12:00", "16:00"],
 }
 
-# Синхронные функции работы с БД
-
+# База данных
 def init_db_sync():
     with sqlite3.connect(DB_PATH) as db:
         db.execute("""
@@ -40,46 +46,35 @@ def init_db_sync():
         """)
         db.commit()
 
-def get_occupied_seats_sync(date: str, session: str, row: int):
+def get_occupied_seats_sync(date, session, row):
     with sqlite3.connect(DB_PATH) as db:
-        cursor = db.execute(
-            "SELECT seat, user_id FROM bookings WHERE date = ? AND session = ? AND row = ?",
-            (date, session, row)
-        )
+        cursor = db.execute("SELECT seat, user_id FROM bookings WHERE date=? AND session=? AND row=?", (date, session, row))
         return dict(cursor.fetchall())
 
-def book_seat_sync(date: str, session: str, row: int, seat: int, user_id: int):
+def book_seat_sync(date, session, row, seat, user_id):
     with sqlite3.connect(DB_PATH) as db:
-        db.execute(
-            "INSERT INTO bookings (date, session, row, seat, user_id) VALUES (?, ?, ?, ?, ?)",
-            (date, session, row, seat, user_id)
-        )
+        db.execute("INSERT INTO bookings (date, session, row, seat, user_id) VALUES (?, ?, ?, ?, ?)", (date, session, row, seat, user_id))
         db.commit()
 
-def cancel_booking_sync(date: str, session: str, row: int, seat: int, user_id: int):
+def cancel_booking_sync(date, session, row, seat, user_id):
     with sqlite3.connect(DB_PATH) as db:
-        db.execute(
-            "DELETE FROM bookings WHERE date = ? AND session = ? AND row = ? AND seat = ? AND user_id = ?",
-            (date, session, row, seat, user_id)
-        )
+        db.execute("DELETE FROM bookings WHERE date=? AND session=? AND row=? AND seat=? AND user_id=?", (date, session, row, seat, user_id))
         db.commit()
 
-# Асинхронные обертки через asyncio.to_thread
-
+# Асинхронные обёртки
 async def init_db():
     await asyncio.to_thread(init_db_sync)
 
-async def get_occupied_seats(date: str, session: str, row: int):
+async def get_occupied_seats(date, session, row):
     return await asyncio.to_thread(get_occupied_seats_sync, date, session, row)
 
-async def book_seat(date: str, session: str, row: int, seat: int, user_id: int):
+async def book_seat(date, session, row, seat, user_id):
     await asyncio.to_thread(book_seat_sync, date, session, row, seat, user_id)
 
-async def cancel_booking(date: str, session: str, row: int, seat: int, user_id: int):
+async def cancel_booking(date, session, row, seat, user_id):
     await asyncio.to_thread(cancel_booking_sync, date, session, row, seat, user_id)
 
-# Хэндлеры бота
-
+# Хендлеры
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     kb = InlineKeyboardBuilder()
@@ -114,36 +109,22 @@ async def select_row(callback: CallbackQuery):
 async def select_seat(callback: CallbackQuery):
     _, date, session, row_num = callback.data.split("_", 3)
     row_num = int(row_num)
-
     occupied = await get_occupied_seats(date, session, row_num)
-
     kb = InlineKeyboardBuilder()
 
     for seat_num in range(1, SEATS_PER_ROW + 1):
         if seat_num in occupied:
             if occupied[seat_num] == callback.from_user.id:
-                kb.button(
-                    text=f"🔵",
-                    callback_data=f"cancel_{date}_{session}_{row_num}_{seat_num}"
-                )
+                kb.button(text="🔵", callback_data=f"cancel_{date}_{session}_{row_num}_{seat_num}")
             else:
-                kb.button(
-                    text=f"❌",
-                    callback_data="ignore"
-                )
+                kb.button(text="❌", callback_data="ignore")
         else:
-            kb.button(
-                text=f"{seat_num}",
-                callback_data=f"seat_{date}_{session}_{row_num}_{seat_num}"
-            )
+            kb.button(text=str(seat_num), callback_data=f"seat_{date}_{session}_{row_num}_{seat_num}")
 
     kb.button(text="⬅️ Назад к рядам", callback_data=f"session_{date}_{session}")
     kb.button(text="🏠 Назад к датам", callback_data="start")
 
-    await callback.message.edit_text(
-        f"Дата: {date}\nСеанс: {session}\nРяд: {row_num}\nВыберите место:",
-        reply_markup=kb.as_markup()
-    )
+    await callback.message.edit_text(f"Дата: {date}\nСеанс: {session}\nРяд: {row_num}\nВыберите место:", reply_markup=kb.as_markup())
 
 @dp.callback_query(F.data.startswith("seat_"))
 async def book_seat_handler(callback: CallbackQuery):
@@ -158,17 +139,12 @@ async def book_seat_handler(callback: CallbackQuery):
         return
 
     await book_seat(date, session, row_num, seat_num, user_id)
-    await callback.answer("Место забронировано ✅", show_alert=False)
+    await callback.answer("Место забронировано ✅")
 
     await bot.send_message(
         user_id,
-        f"🎟 Ваша бронь:\n\n"
-        f"📅 Дата: {date}\n"
-        f"🕒 Сеанс: {session}\n"
-        f"🎫 Ряд: {row_num}\n"
-        f"💺 Место: {seat_num}"
+        f"🎟 Ваша бронь:\n📅 {date}\n🕒 {session}\n🎫 Ряд {row_num}, место {seat_num}"
     )
-
     await select_seat(callback)
 
 @dp.callback_query(F.data.startswith("cancel_"))
@@ -179,26 +155,33 @@ async def cancel_seat(callback: CallbackQuery):
     user_id = callback.from_user.id
 
     await cancel_booking(date, session, row_num, seat_num, user_id)
-    await callback.answer("Бронирование отменено ✅", show_alert=False)
-
+    await callback.answer("Бронь отменена ✅")
     await bot.send_message(
         user_id,
-        f"❌ Ваша бронь отменена:\n\n"
-        f"📅 Дата: {date}\n"
-        f"🕒 Сеанс: {session}\n"
-        f"🎫 Ряд: {row_num}\n"
-        f"💺 Место: {seat_num}"
+        f"❌ Бронь отменена:\n📅 {date}\n🕒 {session}\n🎫 Ряд {row_num}, место {seat_num}"
     )
-
     await select_seat(callback)
 
 @dp.callback_query(F.data == "ignore")
-async def ignore_handler(callback: CallbackQuery):
+async def ignore(callback: CallbackQuery):
     await callback.answer("Место занято", show_alert=True)
 
-async def main():
+# 🛰 Webhook-сервер
+async def on_startup(app):
+    await bot.set_webhook(f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}", secret_token=WEBHOOK_SECRET)
     await init_db()
-    await dp.start_polling(bot)
+
+async def on_shutdown(app):
+    await bot.delete_webhook()
+
+def create_app():
+    app = web.Application()
+    app["bot"] = bot
+    SimpleRequestHandler(dispatcher=dp, bot=bot, secret_token=WEBHOOK_SECRET).register(app, path=WEBHOOK_PATH)
+    setup_application(app, dp, bot=bot)
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+    return app
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    web.run_app(create_app(), host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
