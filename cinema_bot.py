@@ -4,10 +4,11 @@ import asyncio
 import os
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message, InlineKeyboardButton
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton  # ✅ добавлен импорт
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
+
 
 # 📌 Переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
