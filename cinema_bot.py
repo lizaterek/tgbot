@@ -110,42 +110,41 @@ async def select_seat(callback: CallbackQuery):
     _, date, session, row_num = callback.data.split("_", 3)
     row_num = int(row_num)
     occupied = await get_occupied_seats(date, session, row_num)
+    
     kb = InlineKeyboardBuilder()
 
+    # Формируем ряды с кнопками
+    row_buttons = []
     for seat_num in range(1, SEATS_PER_ROW + 1):
         if seat_num in occupied:
             if occupied[seat_num] == callback.from_user.id:
-                kb.button(text="🔵", callback_data=f"cancel_{date}_{session}_{row_num}_{seat_num}")
+                text = "🔵"  # Забронировано пользователем
+                cb_data = f"cancel_{date}_{session}_{row_num}_{seat_num}"
             else:
-                kb.button(text="❌", callback_data="ignore")
+                text = "❌"  # Занято другим
+                cb_data = "ignore"
         else:
-            kb.button(text=str(seat_num), callback_data=f"seat_{date}_{session}_{row_num}_{seat_num}")
+            text = str(seat_num)
+            cb_data = f"seat_{date}_{session}_{row_num}_{seat_num}"
 
-    kb.button(text="⬅️ Назад к рядам", callback_data=f"session_{date}_{session}")
-    kb.button(text="🏠 Назад к датам", callback_data="start")
+        row_buttons.append((text, cb_data))
 
-    await callback.message.edit_text(f"Дата: {date}\nСеанс: {session}\nРяд: {row_num}\nВыберите место:", reply_markup=kb.as_markup())
+    # ➕ Разбиваем на строки по 4 места (или любое другое число)
+    for i in range(0, len(row_buttons), 4):
+        kb.row(*[kb.button(text=btn[0], callback_data=btn[1]) for btn in row_buttons[i:i+4]])
 
-@dp.callback_query(F.data.startswith("seat_"))
-async def book_seat_handler(callback: CallbackQuery):
-    _, date, session, row_num, seat_num = callback.data.split("_")
-    row_num = int(row_num)
-    seat_num = int(seat_num)
-    user_id = callback.from_user.id
-
-    occupied = await get_occupied_seats(date, session, row_num)
-    if seat_num in occupied:
-        await callback.answer("Место уже занято!", show_alert=True)
-        return
-
-    await book_seat(date, session, row_num, seat_num, user_id)
-    await callback.answer("Место забронировано ✅")
-
-    await bot.send_message(
-        user_id,
-        f"🎟 Ваша бронь:\n📅 {date}\n🕒 {session}\n🎫 Ряд {row_num}, место {seat_num}"
+    # Кнопки "назад"
+    kb.row(
+        kb.button(text="⬅️ Назад к рядам", callback_data=f"session_{date}_{session}"),
+        kb.button(text="🏠 Назад к датам", callback_data="start")
     )
-    await select_seat(callback)
+
+    await callback.message.edit_text(
+        f"📅 Дата: {date}\n🕒 Сеанс: {session}\n🎫 Ряд: {row_num}\n\n"
+        f"🔵 — ваше место\n❌ — занято\n\nВыберите место:",
+        reply_markup=kb.as_markup()
+    )
+
 
 @dp.callback_query(F.data.startswith("cancel_"))
 async def cancel_seat(callback: CallbackQuery):
