@@ -112,16 +112,15 @@ async def select_seat(callback: CallbackQuery):
     occupied = await get_occupied_seats(date, session, row_num)
     
     kb = InlineKeyboardBuilder()
-
-    # Формируем ряды с кнопками
     row_buttons = []
+
     for seat_num in range(1, SEATS_PER_ROW + 1):
         if seat_num in occupied:
             if occupied[seat_num] == callback.from_user.id:
-                text = "🔵"  # Забронировано пользователем
+                text = "🔵"
                 cb_data = f"cancel_{date}_{session}_{row_num}_{seat_num}"
             else:
-                text = "❌"  # Занято другим
+                text = "❌"
                 cb_data = "ignore"
         else:
             text = str(seat_num)
@@ -129,14 +128,16 @@ async def select_seat(callback: CallbackQuery):
 
         row_buttons.append((text, cb_data))
 
-    # ➕ Разбиваем на строки по 4 места (или любое другое число)
     for i in range(0, len(row_buttons), 4):
-        kb.row(*[kb.button(text=btn[0], callback_data=btn[1]) for btn in row_buttons[i:i+4]])
+        buttons = [
+            InlineKeyboardButton(text=text, callback_data=cb_data)
+            for text, cb_data in row_buttons[i:i+4]
+        ]
+        kb.row(*buttons)
 
-    # Кнопки "назад"
     kb.row(
-        kb.button(text="⬅️ Назад к рядам", callback_data=f"session_{date}_{session}"),
-        kb.button(text="🏠 Назад к датам", callback_data="start")
+        InlineKeyboardButton(text="⬅️ Назад к рядам", callback_data=f"session_{date}_{session}"),
+        InlineKeyboardButton(text="🏠 Назад к датам", callback_data="start")
     )
 
     await callback.message.edit_text(
@@ -144,8 +145,7 @@ async def select_seat(callback: CallbackQuery):
         f"🔵 — ваше место\n❌ — занято\n\nВыберите место:",
         reply_markup=kb.as_markup()
     )
-
-
+    
 @dp.callback_query(F.data.startswith("cancel_"))
 async def cancel_seat(callback: CallbackQuery):
     _, date, session, row_num, seat_num = callback.data.split("_")
