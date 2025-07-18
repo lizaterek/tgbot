@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery, Message, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
+from aiogram.exceptions import TelegramRetryAfter
 
 # 📉️ Переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
