@@ -156,10 +156,13 @@ async def book_seat_handler(callback: CallbackQuery):
     await book_seat(date, session, row_num, seat_num, user_id)
     await callback.answer("Место забронировано ✅")
     await callback.message.delete()
-    await bot.send_message(user_id, f"🎟 Ваша бронь:
-📅 {date}
-🕒 {session}
-🎫 Ряд {row_num}, место {seat_num}")
+    await bot.send_message(
+    user_id,
+    f"🎟 Ваша бронь подтверждена:\n"
+    f"📅 {date}\n"
+    f"🕒 {session}\n"
+    f"🎫 Ряд {row_num}, место {seat_num}"
+)
 
 @dp.callback_query(F.data.startswith("cancel_"))
 async def cancel_seat(callback: CallbackQuery):
@@ -169,10 +172,13 @@ async def cancel_seat(callback: CallbackQuery):
 
     await cancel_booking(date, session, row_num, seat_num, user_id)
     await callback.answer("Бронь отменена ✅")
-    await bot.send_message(user_id, f"❌ Бронь отменена:
-📅 {date}
-🕒 {session}
-🎫 Ряд {row_num}, место {seat_num}")
+    await bot.send_message(
+    user_id, 
+    f"❌ Бронь отменена:\n"
+    f"📅 {date}\n"
+    f"🕒 {session}\n"
+    f"🎫 Ряд {row_num}, место {seat_num}"
+    )
     await select_seat(callback)
 
 @dp.callback_query(F.data == "ignore")
