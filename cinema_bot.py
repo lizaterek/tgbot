@@ -192,16 +192,25 @@ async def on_startup(app: web.Application):
     await init_db()
 
 async def on_shutdown(app: web.Application):
+    # Попытка удалить webhook с обработкой ошибок
     try:
         await bot.delete_webhook()
     except TelegramRetryAfter as e:
-        logging.warning(f"Flood control on delete_webhook: retry after {e.timeout} seconds")
+        logging.warning(f"Flood control на delete_webhook: нужно подождать {e.timeout} секунд")
+    except Exception as e:
+        logging.error(f"Ошибка при удалении webhook: {e}")
 
+    # Небольшая задержка, чтобы снизить вероятность флуда
+    await asyncio.sleep(1)
+
+    # Попытка корректно закрыть бота с обработкой ошибок
     try:
         await bot.close()
     except TelegramRetryAfter as e:
-        logging.warning(f"Flood control on bot.close(): retry after {e.timeout} seconds")
-
+        logging.warning(f"Flood control на bot.close(): нужно подождать {e.timeout} секунд")
+    except Exception as e:
+        logging.error(f"Ошибка при закрытии бота: {e}")
+        
 def create_app():
     app = web.Application()
     SimpleRequestHandler(dispatcher=dp, bot=bot, secret_token=WEBHOOK_SECRET).register(app, path=WEBHOOK_PATH)
