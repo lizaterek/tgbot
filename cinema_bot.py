@@ -209,8 +209,8 @@ def create_app():
     async def echo(request):
         print("👉 Пришёл POST-запрос в webhook")
         return web.Response(text="OK")
-
-app.router.add_post(WEBHOOK_PATH, echo)
+        
+    app.router.add_post(WEBHOOK_PATH, echo)
     return app
 
 if __name__ == "__main__":
