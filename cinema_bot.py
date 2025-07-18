@@ -16,6 +16,9 @@ BASE_WEBHOOK_URL = os.getenv("BASE_WEBHOOK_URL")  # Пример: https://your-b
 WEBHOOK_PATH = "/webhook"
 DB_PATH = "bookings.db"
 PORT = int(os.environ["PORT"])  # Обязательно для Render
+assert BOT_TOKEN, "❌ Переменная BOT_TOKEN не установлена"
+assert BASE_WEBHOOK_URL, "❌ Переменная BASE_WEBHOOK_URL не установлена"
+assert PORT, "❌ Переменная PORT не установлена"
 
 logging.basicConfig(level=logging.INFO)
 
@@ -195,7 +198,7 @@ def create_app():
     app = web.Application()
     app["bot"] = bot
     SimpleRequestHandler(dispatcher=dp, bot=bot, secret_token=WEBHOOK_SECRET).register(app, path=WEBHOOK_PATH)
-    setup_application(app, dp, bot=bot)
+    setup_application(app, dp)
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
 
