@@ -188,6 +188,7 @@ async def ignore(callback: CallbackQuery):
 
 # 🛡 Webhook-сервер
 async def on_startup(app):
+    print("🚀 on_startup работает!")
     await bot.set_webhook(f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}", secret_token=WEBHOOK_SECRET)
     await init_db()
 
