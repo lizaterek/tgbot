@@ -191,8 +191,15 @@ async def on_startup(app: web.Application):
     await init_db()
 
 async def on_shutdown(app: web.Application):
-    await bot.delete_webhook()
-    await bot.close()
+    try:
+        await bot.delete_webhook()
+    except TelegramRetryAfter as e:
+        logging.warning(f"Flood control on delete_webhook: retry after {e.timeout} seconds")
+
+    try:
+        await bot.close()
+    except TelegramRetryAfter as e:
+        logging.warning(f"Flood control on bot.close(): retry after {e.timeout} seconds")
 
 def create_app():
     app = web.Application()
