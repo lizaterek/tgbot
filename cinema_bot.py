@@ -2,6 +2,7 @@ import logging
 import sqlite3
 import asyncio
 import os
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message, InlineKeyboardButton
@@ -9,23 +10,22 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
-# 📌 Переменные окружения
+# 📉️ Переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "supersecret")
-BASE_WEBHOOK_URL = os.getenv("BASE_WEBHOOK_URL")  # Пример: https://your-bot.onrender.com
+BASE_WEBHOOK_URL = os.getenv("BASE_WEBHOOK_URL")
 WEBHOOK_PATH = "/webhook"
 DB_PATH = "bookings.db"
-PORT = int(os.environ["PORT"])  # Обязательно для Render
-assert BOT_TOKEN, "❌ Переменная BOT_TOKEN не установлена"
-assert BASE_WEBHOOK_URL, "❌ Переменная BASE_WEBHOOK_URL не установлена"
-assert PORT, "❌ Переменная PORT не установлена"
+PORT = int(os.environ.get("PORT", 10000))
+
+assert BOT_TOKEN, "❌ BOT_TOKEN не установлен"
+assert BASE_WEBHOOK_URL, "❌ BASE_WEBHOOK_URL не установлен"
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# 🗕 Константы
 ROWS = 3
 SEATS_PER_ROW = 8
 DATES = ["12 июня", "13 июня", "14 июня"]
@@ -35,7 +35,6 @@ SESSIONS_PER_DATE = {
     "14 июня": ["12:00", "16:00"],
 }
 
-# База данных
 def init_db_sync():
     with sqlite3.connect(DB_PATH) as db:
         db.execute("""
@@ -65,7 +64,6 @@ def cancel_booking_sync(date, session, row, seat, user_id):
         db.execute("DELETE FROM bookings WHERE date=? AND session=? AND row=? AND seat=? AND user_id=?", (date, session, row, seat, user_id))
         db.commit()
 
-# Асинхронные обёртки
 async def init_db():
     await asyncio.to_thread(init_db_sync)
 
@@ -78,7 +76,6 @@ async def book_seat(date, session, row, seat, user_id):
 async def cancel_booking(date, session, row, seat, user_id):
     await asyncio.to_thread(cancel_booking_sync, date, session, row, seat, user_id)
 
-# Хендлеры
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     kb = InlineKeyboardBuilder()
@@ -141,16 +138,14 @@ async def select_seat(callback: CallbackQuery):
     )
 
     await callback.message.edit_text(
-        f"📅 Дата: {date}\n🕒 Сеанс: {session}\n🎫 Ряд: {row_num}\n\n"
-        f"🔵 — ваше место\n❌ — занято\n\nВыберите место:",
+        f"📅 Дата: {date}\n🕒 Сеанс: {session}\n🎫 Ряд: {row_num}\n\n🔵 — ваше место\n❌ — занято\n\nВыберите место:",
         reply_markup=kb.as_markup()
     )
 
 @dp.callback_query(F.data.startswith("seat_"))
 async def book_seat_handler(callback: CallbackQuery):
     _, date, session, row_num, seat_num = callback.data.split("_")
-    row_num = int(row_num)
-    seat_num = int(seat_num)
+    row_num, seat_num = int(row_num), int(seat_num)
     user_id = callback.from_user.id
 
     occupied = await get_occupied_seats(date, session, row_num)
@@ -160,45 +155,41 @@ async def book_seat_handler(callback: CallbackQuery):
 
     await book_seat(date, session, row_num, seat_num, user_id)
     await callback.answer("Место забронировано ✅")
-
-    # Удаляем сообщение с выбором места
     await callback.message.delete()
-
-    # Отправляем новое сообщение с подтверждением
-    await bot.send_message(
-        user_id,
-        f"🎟 Ваша бронь подтверждена:\n📅 {date}\n🕒 {session}\n🎫 Ряд {row_num}, место {seat_num}"
-    )
+    await bot.send_message(user_id, f"🎟 Ваша бронь:
+📅 {date}
+🕒 {session}
+🎫 Ряд {row_num}, место {seat_num}")
 
 @dp.callback_query(F.data.startswith("cancel_"))
 async def cancel_seat(callback: CallbackQuery):
     _, date, session, row_num, seat_num = callback.data.split("_")
-    row_num = int(row_num)
-    seat_num = int(seat_num)
+    row_num, seat_num = int(row_num), int(seat_num)
     user_id = callback.from_user.id
 
     await cancel_booking(date, session, row_num, seat_num, user_id)
     await callback.answer("Бронь отменена ✅")
-    await bot.send_message(user_id, f"❌ Бронь отменена:\n📅 {date}\n🕒 {session}\n🎫 Ряд {row_num}, место {seat_num}")
+    await bot.send_message(user_id, f"❌ Бронь отменена:
+📅 {date}
+🕒 {session}
+🎫 Ряд {row_num}, место {seat_num}")
     await select_seat(callback)
 
 @dp.callback_query(F.data == "ignore")
 async def ignore(callback: CallbackQuery):
     await callback.answer("Место занято", show_alert=True)
 
-# 🛡 Webhook-сервер
-async def on_startup(app):
+async def on_startup(app: web.Application):
     print("🚀 on_startup работает!")
     await bot.set_webhook(f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}", secret_token=WEBHOOK_SECRET)
     await init_db()
 
-async def on_shutdown(app):
+async def on_shutdown(app: web.Application):
     await bot.delete_webhook()
     await bot.close()
 
 def create_app():
     app = web.Application()
-    app["bot"] = bot
     SimpleRequestHandler(dispatcher=dp, bot=bot, secret_token=WEBHOOK_SECRET).register(app, path=WEBHOOK_PATH)
     setup_application(app, dp)
     app.on_startup.append(on_startup)
@@ -208,7 +199,6 @@ def create_app():
         return web.Response(text="✅ Бот работает")
 
     app.router.add_get("/", healthcheck)
-
     return app
 
 if __name__ == "__main__":
