@@ -205,13 +205,7 @@ def create_app():
         return web.Response(text="✅ Бот работает")
 
     app.router.add_get("/", healthcheck)
-
-    async def echo(request):
-        print("👉 Пришёл POST-запрос в webhook")
-        return web.Response(text="OK")
-        
-    app.router.add_post(WEBHOOK_PATH, echo)
-    
+  
     return app
 
 if __name__ == "__main__":
